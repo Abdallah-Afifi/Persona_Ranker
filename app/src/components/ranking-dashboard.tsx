@@ -45,6 +45,7 @@ export function RankingDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string>("");
   const [topN, setTopN] = useState(3);
+  const [progress, setProgress] = useState({ processed: 0, total: 0 });
 
   const loadResults = useCallback(async () => {
     setIsLoading(true);
@@ -108,13 +109,53 @@ export function RankingDashboard() {
   const handleRank = async () => {
     setIsRanking(true);
     setError(null);
-    setStatusMessage("Running AI ranking process... This may take a few minutes.");
+    setProgress({ processed: 0, total: 0 });
+    setStatusMessage("Starting AI ranking process...");
+
     try {
-      const res = await fetch("/api/rank", { method: "POST" });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
+      // Step 1: Create run and get lead IDs
+      const startRes = await fetch("/api/rank", { method: "POST" });
+      const startData = await startRes.json();
+      if (startData.error) throw new Error(startData.error);
+
+      const { run_id, lead_ids, total } = startData;
+      setProgress({ processed: 0, total });
+      setStatusMessage(`Ranking 0 / ${total} leads...`);
+
+      // Step 2: Process in batches of 10
+      const BATCH_SIZE = 10;
+      let totalProcessed = 0;
+
+      for (let i = 0; i < lead_ids.length; i += BATCH_SIZE) {
+        const batch = lead_ids.slice(i, i + BATCH_SIZE);
+
+        const batchRes = await fetch("/api/rank/batch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ run_id, lead_ids: batch }),
+        });
+        const batchData = await batchRes.json();
+        if (batchData.error) throw new Error(batchData.error);
+
+        totalProcessed = batchData.total_processed;
+        setProgress({ processed: totalProcessed, total });
+        setStatusMessage(
+          `Ranking ${totalProcessed} / ${total} leads... (${batchData.total_tokens.toLocaleString()} tokens)`
+        );
+      }
+
+      // Step 3: Finalize — assign per-company ranks
+      setStatusMessage("Finalizing rankings...");
+      const finalRes = await fetch("/api/rank/finalize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ run_id }),
+      });
+      const finalData = await finalRes.json();
+      if (finalData.error) throw new Error(finalData.error);
+
       setStatusMessage(
-        `Ranking complete! Processed ${data.total_processed} leads using ${data.total_tokens.toLocaleString()} tokens.`
+        `Ranking complete! ${finalData.total_results} leads processed, ${finalData.relevant_count} relevant. (${finalData.total_tokens.toLocaleString()} tokens)`
       );
       await loadResults();
     } catch (err) {
@@ -211,6 +252,21 @@ export function RankingDashboard() {
         {statusMessage && (
           <div className="mt-3 p-3 bg-blue-50 text-blue-700 rounded-lg text-sm">
             {statusMessage}
+            {isRanking && progress.total > 0 && (
+              <div className="mt-2">
+                <div className="w-full bg-blue-200 rounded-full h-2">
+                  <div
+                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                    style={{
+                      width: `${Math.round((progress.processed / progress.total) * 100)}%`,
+                    }}
+                  />
+                </div>
+                <p className="text-xs mt-1 text-blue-500">
+                  {Math.round((progress.processed / progress.total) * 100)}% complete
+                </p>
+              </div>
+            )}
           </div>
         )}
         {error && (
