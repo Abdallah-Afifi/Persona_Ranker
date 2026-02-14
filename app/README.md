@@ -4,7 +4,9 @@ AI-powered lead qualification and ranking system built for Throxy. Given a list 
 
 ## Live Demo
 
-🔗 [Deployed on Vercel](https://persona-ranker.vercel.app) *(update once deployed)*
+🔗 [Deployed on Vercel](https://persona-ranker-eight.vercel.app)
+
+📂 [GitHub Repository](https://github.com/Abdallah-Afifi/Persona_Ranker)
 
 ## How to Run Locally
 
@@ -17,7 +19,7 @@ AI-powered lead qualification and ranking system built for Throxy. Given a list 
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/YOUR_USERNAME/Persona_Ranker.git
+   git clone https://github.com/Abdallah-Afifi/Persona_Ranker.git
    cd Persona_Ranker/app
    ```
 
