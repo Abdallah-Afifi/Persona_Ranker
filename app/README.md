@@ -89,7 +89,18 @@ AI-powered lead qualification and ranking system built for Throxy. Given a list 
 
 ### 1. AI Provider: Groq (Llama 3.3 70B)
 - **Why:** Free tier with generous limits, fast inference (~200ms per call), and Llama 3.3 70B produces high-quality structured JSON outputs for lead evaluation.
-- **Tradeoff:** Groq's free tier has rate limits (30 RPM), so ranking 200 leads takes a few minutes. In production, we'd use a paid tier or batch processing.
+- **Tradeoff:** Groq's free tier has rate limits (30 RPM), so ranking 200 leads takes ~8-10 minutes. In production, we'd use a paid tier to eliminate rate limiting.
+
+### Batched Ranking Architecture
+The ranking process is split into three API calls to work within Vercel's serverless function timeout (60s on the Hobby plan):
+
+1. **`POST /api/rank`** — Creates a ranking run and returns all lead IDs (~instant)
+2. **`POST /api/rank/batch`** — Processes 10 leads per request (~20-25s each). The frontend calls this repeatedly in a loop.
+3. **`POST /api/rank/finalize`** — Assigns per-company ranks and marks the run as completed (~instant)
+
+The frontend drives the loop, updating a progress bar after each batch. This means no single serverless invocation exceeds the timeout, while still providing real-time progress feedback.
+
+**Why not process all leads in one request?** Vercel Hobby has a 60s function timeout. With a 2s delay between Groq calls for rate limiting, processing 200 leads takes ~8 minutes — far exceeding any single-request timeout. The batched approach solves this without requiring Vercel Pro or a background job queue.
 
 ### 2. Ranking Strategy: Per-Company Relevance Scoring
 - Each lead is evaluated individually against the full persona spec, receiving a 0-100 relevance score.
@@ -118,10 +129,10 @@ AI-powered lead qualification and ranking system built for Throxy. Given a list 
 
 | Decision | Tradeoff |
 |----------|----------|
-| Synchronous ranking | Simpler implementation but the UI blocks during ranking. For production, we'd use a job queue (e.g., Inngest, BullMQ) with WebSocket progress updates. |
+| Batched frontend-driven ranking | Each batch of 10 leads is a separate API call (~25s), keeping within Vercel's 60s timeout. Simpler than a job queue but the browser tab must stay open. In production, we'd use a background worker (Inngest, BullMQ) with WebSocket updates. |
 | In-memory persona spec | The persona spec is embedded in the code rather than stored in DB. For a multi-tenant system, we'd make it configurable per customer. |
 | Single AI call per lead | Each lead gets its own API call for accuracy. Batching leads per company could reduce costs but would sacrifice per-lead evaluation depth. |
-| Groq free tier | No cost but rate limited. The ~200ms delay between calls ensures we stay within limits, making the full ranking take 2-3 minutes. |
+| Groq free tier + 2s rate limit delay | No cost but rate limited (30 RPM). The 2s delay between calls keeps us within limits, making the full ranking of 200 leads take ~8-10 minutes. A paid tier would remove this bottleneck entirely. |
 | RLS policies allow all | For this demo, Row Level Security permits all operations. In production, we'd scope access by user/organization. |
 
 ## Bonus Features Implemented
